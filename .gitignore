@@ -1,4 +1,4 @@
 Cargo.lock
-/.idea/*
-/.vscode/*
-/target/*
+/.idea/**
+/.vscode/**
+/target/**

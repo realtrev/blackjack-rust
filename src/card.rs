@@ -7,8 +7,19 @@ trait Numeric {
 
 #[derive(Copy, Clone)]
 pub enum Rank {
-    Two = 2, Three = 3, Four = 4, Five = 5, Six = 6, Seven = 7, Eight = 8, Nine = 9, Ten = 10,
-    Jack = 11, Queen = 12, King = 13, Ace = 14,
+    Two = 2,
+    Three = 3,
+    Four = 4,
+    Five = 5,
+    Six = 6,
+    Seven = 7,
+    Eight = 8,
+    Nine = 9,
+    Ten = 10,
+    Jack = 11,
+    Queen = 12,
+    King = 13,
+    Ace = 14,
 }
 
 impl Numeric for Rank {
@@ -72,7 +83,10 @@ impl Display for Rank {
 
 #[derive(Copy, Clone)]
 pub enum Suit {
-    Clubs = 1, Diamonds = 2, Hearts = 3, Spades = 4,
+    Clubs = 1,
+    Diamonds = 2,
+    Hearts = 3,
+    Spades = 4,
 }
 
 impl Numeric for Suit {
@@ -119,14 +133,27 @@ impl Card {
     }
 
     pub fn from_int(rank: u8, suit: u8) -> Card {
-        Card { rank: Rank::from_int(rank), suit: Suit::from_int(suit) }
+        Card {
+            rank: Rank::from_int(rank),
+            suit: Suit::from_int(suit),
+        }
     }
 
     pub fn to_string(&self) -> String {
         format!("{} of {}", self.rank, self.suit)
     }
-    
+
     pub fn get_value(&self) -> u8 {
         self.rank.as_int()
+    }
+    
+    pub fn new_deck() -> Vec<Card> {
+        let mut deck = Vec::new();
+        for suit in 1..=4 {
+            for rank in 2..=14 {
+                deck.push(Card::from_int(rank, suit));
+            }
+        }
+        deck
     }
 }
