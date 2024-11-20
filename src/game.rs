@@ -1,4 +1,4 @@
-use crate::card::Rank;
+use crate::card::{Card, Rank};
 use crate::deck::Deck;
 use crate::hand::Hand;
 use crate::input;
@@ -103,7 +103,7 @@ impl Game {
             
             if round.split {
                 println!("  SPLIT");
-                println!("      ${} {} - Dealer: {} - Player: {}",
+                println!("      ${} {} - Dealer: {} - Player: {} (${}) - Insurance: {}",
                     round.bet,
                     match round.result {
                         RoundResult::Win => "WIN",
@@ -112,8 +112,10 @@ impl Game {
                     },
                     round.dealer_hand.get_value(),
                     round.player_hand.get_value(),
+                    round.payout,
+                    round.insurance
                 );
-                println!("      ${} {} - Dealer: {} - Player: {}",
+                println!("      ${} {} - Dealer: {} - Player: {} (${}) - Insurance: {}",
                     round.split_bet,
                     match round.split_result {
                         RoundResult::Win => "WIN",
@@ -122,11 +124,13 @@ impl Game {
                     },
                     round.dealer_hand.get_value(),
                     round.player_split.get_value(),
+                    round.payout,
+                    round.insurance
                 );
                 continue;
             }
             
-            println!("  ${} {} - Dealer: {} - Player: {}",
+            println!("  ${} {} - Dealer: {} - Player: {} (${}) - Insurance: {}",
                 round.bet,
                 match round.result {
                     RoundResult::Win => "WIN",
@@ -135,12 +139,14 @@ impl Game {
                 },
                 round.dealer_hand.get_value(),
                 round.player_hand.get_value(),
+                round.payout,
+                round.insurance
             );
         }
     }
 
     pub fn play_round(&mut self) {
-        if self.deck.cards.len() < 20 {
+        if self.deck.cards.len() < 26 {
             self.deck.shuffle();
         }
         clear();
@@ -161,6 +167,7 @@ impl Game {
         self.dealer.hand.add_card(self.deck.deal().unwrap());
         
         let mut split = false;
+        let mut insurance = 0;
 
         loop {
             clear();
@@ -171,7 +178,7 @@ impl Game {
                 println!("Split bet: ${}", self.player.split_bet);
             }
             if self.player.insurance {
-                println!("Insurance: ${}", self.player.bet / 2);
+                println!("Insurance: ${}", insurance);
             }
 
             println!("\n  Dealer's hand:");
@@ -190,7 +197,7 @@ impl Game {
             // insurance
             if self.dealer.hand.cards[0].get_value() == Rank::Ace as u8
                 && self.player.balance >= self.player.bet / 2
-                && !split
+                && !self.player.insurance
             {
                 options.push(input::Choice { label: "Insurance".to_string(), value: "insurance" });
             }
@@ -222,23 +229,36 @@ impl Game {
                     break;
                 },
                 "double" => {
+                    if self.player.balance < insurance + self.player.bet * 2 {
+                        println!("You don't have enough money to double down");
+                        wait_for_keypress();
+                        continue;
+                    }
                     self.player.bet *= 2;
                     self.player.hand.add_card(self.deck.deal().unwrap());
                     break;
                 },
                 "split" => {
                     // check if the player has enough money to split
-                    if self.player.balance < self.player.bet {
+                    if self.player.balance < insurance + self.player.bet * 2 {
                         println!("You don't have enough money to split");
                         wait_for_keypress();
                         continue;
                     }
                     self.player.split_bet = self.player.bet;
-                    self.player.split.add_card(self.player.hand.cards.pop().unwrap());
+                    let card: Card = self.player.hand.cards.pop().unwrap();
+                    self.player.split.add_card(card);
+                    self.player.hand.calculate_value();
                     split = true;
                 },
                 "insurance" => {
-                    self.player.balance -= self.player.bet / 2;
+                    // check if the player has enough money to insure
+                    if self.player.balance < self.player.bet + self.player.split_bet + self.player.bet / 2 {
+                        println!("You don't have enough money to insure");
+                        wait_for_keypress();
+                        continue;
+                    }
+                    insurance = self.player.bet / 2;
                     self.player.insurance = true;
                 },
                 _ => panic!("Invalid choice"),
@@ -256,6 +276,9 @@ impl Game {
                 println!("Balance: ${}", self.player.balance);
                 println!("First bet: ${}", self.player.bet);
                 println!("Split bet: ${}", self.player.split_bet);
+                if self.player.insurance {
+                    println!("Insurance: ${}", insurance);
+                }
 
                 println!("\n  Dealer's hand:");
                 self.dealer.hand.display_first_card();
@@ -266,7 +289,7 @@ impl Game {
                 println!("\n> *** Your split hand: ***");
                 self.player.split.display();
 
-                let options = vec![
+                let mut options = vec![
                     input::Choice { label: "Hit".to_string(), value: "hit" },
                     input::Choice { label: "Stand".to_string(), value: "stand" },
                     input::Choice { label: "Double Down".to_string(), value: "double" },
@@ -274,6 +297,13 @@ impl Game {
 
                 if self.player.split.get_value() >= 21 {
                     break;
+                }
+
+                if self.dealer.hand.cards[0].get_value() == Rank::Ace as u8
+                    && self.player.balance >= self.player.bet / 2
+                    && !self.player.insurance
+                {
+                    options.push(input::Choice { label: "Insurance".to_string(), value: "insurance" });
                 }
 
                 println!("\nSelect an option: (split hand)");
@@ -287,9 +317,24 @@ impl Game {
                         break;
                     },
                     "double" => {
+                        if self.player.balance < insurance + self.player.bet + self.player.split_bet * 2 {
+                            println!("You don't have enough money to double down");
+                            wait_for_keypress();
+                            continue;
+                        }
                         self.player.split_bet *= 2;
                         self.player.split.add_card(self.deck.deal().unwrap());
-                        break;
+                        continue;
+                    },
+                    "insurance" => {
+                        // check if the player has enough money to insure
+                        if self.player.balance < self.player.bet + self.player.split_bet + self.player.bet / 2 {
+                            println!("You don't have enough money to insure");
+                            wait_for_keypress();
+                            continue;
+                        }
+                        insurance = self.player.bet / 2;
+                        self.player.insurance = true;
                     },
                     _ => panic!("Invalid choice"),
                 }
@@ -331,26 +376,34 @@ impl Game {
             split_result = RoundResult::Push;
         }
         
-        let mut payout = self.player.bet;
+        let mut payout = 0;
+        
+        match result {
+            RoundResult::Win => {
+                payout += self.player.bet;
+            },
+            RoundResult::Loss => {
+                payout -= self.player.bet;
+            },
+            RoundResult::Push => {},
+        }
         
         if split {
-            match result {
+            match split_result {
                 RoundResult::Win => {
-                    payout += self.player.bet;
+                    payout += self.player.split_bet;
                 },
                 RoundResult::Loss => {
-                    payout -= self.player.bet;
+                    payout -= self.player.split_bet;
                 },
                 RoundResult::Push => {},
             }
         }
-        
-        if self.player.insurance {
-            if self.dealer.hand.is_blackjack() {
-                payout += self.player.bet;
-            } else {
-                payout -= self.player.bet / 2;
-            }
+
+        if self.player.insurance && self.dealer.hand.is_blackjack() {
+            payout += insurance;
+        } else {
+            payout -= insurance;
         }
 
         let round = Round {
@@ -366,43 +419,42 @@ impl Game {
             insurance: self.player.insurance,
         };
         
-        self.print_winner(round.result);
+        self.print_winner(round.result, self.player.bet, insurance, split);
         if split {
-            self.print_winner(round.split_result);
+            self.print_winner(round.split_result, self.player.split_bet, insurance,false);
         }
 
         self.player.history.push(round);
     }
     
-    pub fn print_winner(&mut self, result: RoundResult) {
-        if self.player.insurance && self.dealer.hand.is_blackjack() {
-            self.player.balance += self.player.bet;
-            println!("\n**** INSURANCE PAYS ${} ****", self.player.bet);
-            println!("**** Balance: ${} (+${}) ****", self.player.balance, self.player.bet);
+    pub fn print_winner(&mut self, result: RoundResult, bet: i32, insurance: i32, split: bool) {
+        if self.player.insurance && self.dealer.hand.is_blackjack() && split == false {
+            self.player.balance += insurance;
+            println!("\n**** INSURANCE PAYS ${} ****", insurance);
+            println!("**** Balance: ${} (+${}) ****", self.player.balance, insurance);
         }
         
-        if self.player.insurance && !self.dealer.hand.is_blackjack() {
-            self.player.balance -= self.player.bet / 2;
-            println!("\nInsurance Loses ${}", self.player.bet / 2);
-            println!("Balance: ${} (-${})", self.player.balance, self.player.bet / 2);
+        if self.player.insurance && !self.dealer.hand.is_blackjack() && split == false {
+            println!("\nInsurance Loses ${}", insurance);
+            println!("Balance: ${} (-${})", self.player.balance, insurance);
         }
         
         match result {
             RoundResult::Win => {
                 if self.player.hand.is_blackjack() {
-                    self.player.balance += self.player.bet * 3 / 2;
-                    println!("\n**** BLACKJACK! YOU WIN ${} ****", self.player.bet * 3 / 2);
-                    println!("**** Balance: ${} (+${}) ****", self.player.balance, self.player.bet * 3 / 2);
+                    self.player.balance += bet * 3 / 2;
+                    println!("\n**** BLACKJACK! YOU WIN ${} ****", bet * 3 / 2);
+                    println!("**** Balance: ${} (+${}) ****", self.player.balance, bet * 3 / 2);
                 } else {
-                    self.player.balance += self.player.bet;
-                    println!("\n**** YOU WIN ${} ****", self.player.bet);
-                    println!("**** Balance: ${} (+${}) ****", self.player.balance, self.player.bet);
+                    self.player.balance += bet;
+                    println!("\n**** YOU WIN ${} ****", bet);
+                    println!("**** Balance: ${} (+${}) ****", self.player.balance, bet);
                 }
             },
             RoundResult::Loss => {
-                self.player.balance -= self.player.bet;
+                self.player.balance -= bet;
                 println!("\nDealer Wins!");
-                println!("Balance: ${} (-${})", self.player.balance, self.player.bet);
+                println!("Balance: ${} (-${})", self.player.balance, bet);
             },
             RoundResult::Push => {},
         }
@@ -413,11 +465,7 @@ impl Game {
         let dealer_value = dealer.get_value();
 
         return if player_value > 21 {
-            if dealer_value > 21 {
-                RoundResult::Push
-            } else {
-                RoundResult::Loss
-            }
+            RoundResult::Loss
         } else if dealer_value > 21 {
             RoundResult::Win
         } else if player_value > dealer_value {
@@ -443,12 +491,28 @@ impl Game {
         
         match last_round {
             Some(round) => {
-                println!("Last bet: ${} {}", round.payout,
-                         match round.result {
-                             RoundResult::Win => { "WIN".to_string() }
-                             RoundResult::Loss => { "LOSS".to_string() }
-                             RoundResult::Push => { "PUSH".to_string() }
-                         });
+                if round.split {
+                    println!("Last bet: (${}) SPLIT ${} {} ${} {}", round.payout, round.bet,
+                             match round.result {
+                                 RoundResult::Win => { "WIN".to_string() }
+                                 RoundResult::Loss => { "LOSS".to_string() }
+                                 RoundResult::Push => { "PUSH".to_string() }
+                             },
+                            round.split_bet,
+                             match round.split_result {
+                                 RoundResult::Win => { "WIN".to_string() }
+                                 RoundResult::Loss => { "LOSS".to_string() }
+                                 RoundResult::Push => { "PUSH".to_string() }
+                             },
+                    );
+                } else {
+                    println!("Last bet: (${}) ${} {}", round.payout, round.bet,
+                             match round.result {
+                                 RoundResult::Win => { "WIN".to_string() }
+                                 RoundResult::Loss => { "LOSS".to_string() }
+                                 RoundResult::Push => { "PUSH".to_string() }
+                             });
+                }
             },
             None => {},
         }
